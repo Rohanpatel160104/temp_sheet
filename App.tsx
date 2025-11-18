@@ -6,10 +6,10 @@ import Sheet from './components/Sheet';
 import ChatModal from './components/ChatModal';
 import FilterBar from './components/FilterBar';
 import FormulaBar from './components/FormulaBar';
-import { generateSheetData } from './services/geminiService';
 import { getChatResponse } from './services/geminiChatService';
-import { ChatMessage, ColumnOptions, Filter, SortDirection, Selection } from './types';
+import { ChatMessage, ColumnOptions, Filter, SortDirection, Selection, AIResponse } from './types';
 import { useHistory } from './hooks/useHistory';
+import { getColumnName, parseCellAddress } from './utils/cellUtils';
 
 const DEFAULT_ROWS = 20;
 const DEFAULT_COLS = 10;
@@ -98,6 +98,51 @@ const App: React.FC = () => {
         });
     };
 
+    const handleSheetEdit = (updates: { cellAddress: string; newValue: string }[]) => {
+        setSheetData(prevData => {
+            const newData = prevData.map(r => [...r]);
+            let maxRow = newData.length - 1;
+            let maxCol = (newData[0]?.length || 0) -1;
+    
+        // First pass to determine required dimensions
+        updates.forEach(update => {
+            const coords = parseCellAddress(update.cellAddress);
+            if (coords) {
+                if (coords.row > maxRow) maxRow = coords.row;
+                if (coords.col > maxCol) maxCol = coords.col;
+            }
+        });
+
+        // Expand rows if needed
+        while (newData.length <= maxRow) {
+            newData.push(Array(newData[0]?.length || (maxCol + 1)).fill(''));
+        }
+    
+        // Expand columns if needed
+        const currentMaxCol = newData[0]?.length || 0;
+        if (maxCol >= currentMaxCol) {
+            for (let i = 0; i < newData.length; i++) {
+                while (newData[i].length <= maxCol) {
+                    newData[i].push('');
+                }
+            }
+        }
+        
+        // Second pass to apply updates
+        updates.forEach(update => {
+            const coords = parseCellAddress(update.cellAddress);
+            if (coords) {
+                // This check is redundant due to expansion above, but is a good safeguard.
+                if (newData[coords.row]) { 
+                    newData[coords.row][coords.col] = update.newValue;
+                }
+            }
+        });
+    
+        return newData;
+        });
+    }
+
     const handleSendMessage = async (message: string) => {
         const newMessages: ChatMessage[] = [...chatMessages, { sender: 'user', text: message }];
         setChatMessages(newMessages);
@@ -105,8 +150,15 @@ const App: React.FC = () => {
         setError(null);
 
         try {
-            const responseText = await getChatResponse(newMessages, sheetData);
-            setChatMessages(prev => [...prev, { sender: 'ai', text: responseText }]);
+            const response: AIResponse = await getChatResponse(newMessages, sheetData);
+
+            if (response.type === 'sheet_edit') {
+                handleSheetEdit(response.edit.updates);
+                setChatMessages(prev => [...prev, { sender: 'ai', text: "Done! I've updated the sheet as you requested." }]);
+            } else {
+                setChatMessages(prev => [...prev, { sender: 'ai', text: response.content }]);
+            }
+
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred.';
             setError(errorMsg);
@@ -148,16 +200,6 @@ const App: React.FC = () => {
             newWidths[colIndex] = Math.max(40, newWidth); // Min width
             return newWidths;
         });
-    };
-
-    const getColumnName = (colIndex: number) => {
-        let name = '';
-        let n = colIndex;
-        while (n >= 0) {
-            name = String.fromCharCode(n % 26 + 65) + name;
-            n = Math.floor(n / 26) - 1;
-        }
-        return name;
     };
 
 
@@ -212,7 +254,6 @@ const App: React.FC = () => {
                 onClose={() => setIsChatOpen(false)}
                 messages={chatMessages}
                 onSendMessage={handleSendMessage}
-                // Fix: Pass isChatGenerating state to the isGenerating prop.
                 isGenerating={isChatGenerating}
             />
         </div>

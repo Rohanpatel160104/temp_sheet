@@ -51,7 +51,9 @@ const ChatModal: React.FC<ChatModalProps> = ({ messages, onSendMessage, isGenera
     }
 
     const createMarkup = (text: string) => {
-        return { __html: marked.parse(text) as string };
+        // Basic sanitization
+        const sanitized = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return { __html: marked.parse(sanitized) as string };
     }
 
     if (!isOpen) {
@@ -104,7 +106,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ messages, onSendMessage, isGenera
                                 type="text"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                placeholder="e.g., 'Summarize column C'"
+                                placeholder="e.g., 'Fill column A with numbers 1-10'"
                                 className="flex-grow block w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-violet-500 focus:border-violet-500 sm:text-sm"
                                 disabled={isGenerating}
                             />

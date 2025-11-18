@@ -1,10 +1,9 @@
 
-
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { CellAddress, ColumnOptions, Selection } from '../types';
 import Cell from './Cell';
 import { evaluateFormula } from '../utils/formulaParser';
-
+import { getColumnName } from '../utils/cellUtils';
 
 interface SheetProps {
     data: string[][];
@@ -237,16 +236,6 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
         setData(newData);
     };
 
-    const getColumnName = (colIndex: number) => {
-        let name = '';
-        let n = colIndex;
-        while (n >= 0) {
-            name = String.fromCharCode(n % 26 + 65) + name;
-            n = Math.floor(n / 26) - 1;
-        }
-        return name;
-    };
-    
     const startResize = (e: React.MouseEvent, colIndex: number) => {
         e.preventDefault();
         const startX = e.clientX;
