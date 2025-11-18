@@ -14,10 +14,12 @@ const Cell: React.FC<CellProps> = ({ value, displayValue, isEditing, onDoubleCli
     const [localValue, setLocalValue] = useState(value);
     const inputRef = useRef<HTMLInputElement>(null);
     const escaped = useRef(false);
+    const committed = useRef(false); // To prevent double commits on blur after navigation
 
     useEffect(() => {
         if (isEditing) {
             escaped.current = false;
+            committed.current = false; // Reset flags when editing starts
             setLocalValue(value);
             inputRef.current?.focus();
             inputRef.current?.select();
@@ -25,7 +27,8 @@ const Cell: React.FC<CellProps> = ({ value, displayValue, isEditing, onDoubleCli
     }, [isEditing, value]);
 
     const handleBlur = () => {
-        if (!escaped.current && localValue !== value) {
+        // Only commit on blur if not escaped and not already committed by a key press
+        if (!escaped.current && !committed.current && localValue !== value) {
             onChange(localValue);
         }
         onBlur();
@@ -36,6 +39,11 @@ const Cell: React.FC<CellProps> = ({ value, displayValue, isEditing, onDoubleCli
             escaped.current = true;
             onNavigate(e);
         } else if (e.key === 'Enter' || e.key === 'Tab' || e.key.startsWith('Arrow')) {
+            // Commit changes explicitly on navigation keys to make it feel "instant"
+            if (localValue !== value) {
+                committed.current = true;
+                onChange(localValue);
+            }
             onNavigate(e);
         }
     };

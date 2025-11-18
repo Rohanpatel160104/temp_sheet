@@ -1,5 +1,7 @@
+
+
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { CellAddress, ColumnOptions, SortDirection, Filter } from '../types';
+import type { CellAddress, ColumnOptions, Selection } from '../types';
 import Cell from './Cell';
 import { evaluateFormula } from '../utils/formulaParser';
 
@@ -10,14 +12,15 @@ interface SheetProps {
     columnOptions: ColumnOptions[];
     activeFilterColumn: number | null;
     setActiveFilterColumn: (index: number | null) => void;
-    activeCell: CellAddress;
-    setActiveCell: React.Dispatch<React.SetStateAction<CellAddress>>;
+    selection: Selection;
+    setSelection: React.Dispatch<React.SetStateAction<Selection>>;
     columnWidths: number[];
     onColumnResize: (colIndex: number, newWidth: number) => void;
 }
 
-const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilterColumn, setActiveFilterColumn, activeCell, setActiveCell, columnWidths, onColumnResize }) => {
+const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilterColumn, setActiveFilterColumn, selection, setSelection, columnWidths, onColumnResize }) => {
     const [editingCell, setEditingCell] = useState<CellAddress | null>(null);
+    const isSelectingRef = useRef(false);
     
     const numRows = data.length;
     const numCols = data[0]?.length || 0;
@@ -72,13 +75,14 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
                 return;
         }
         
-        setEditingCell({ row, col });
-        setActiveCell({ row, col });
+        const newFocus = { row, col };
+        setSelection({ anchor: newFocus, focus: newFocus });
+        setEditingCell(newFocus);
     };
 
     const handleSheetKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (editingCell) return;
-        let { row, col } = activeCell;
+        let { row, col } = selection.focus;
         let moved = false;
         
         switch (e.key) {
@@ -100,7 +104,7 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
                 break;
             case 'Enter':
                  e.preventDefault();
-                setEditingCell(activeCell);
+                setEditingCell(selection.focus);
                 return;
             case 'Tab':
                 e.preventDefault();
@@ -123,7 +127,12 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
 
         if (moved) {
             e.preventDefault();
-            setActiveCell({ row, col });
+            const newFocus = { row, col };
+            if (e.shiftKey) {
+                setSelection(prev => ({...prev, focus: newFocus}));
+            } else {
+                setSelection({ anchor: newFocus, focus: newFocus });
+            }
         }
     };
 
@@ -196,9 +205,9 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
         const pasteData = e.clipboardData.getData('text/plain');
         const pastedRows = pasteData.split('\n').map(row => row.split('\t'));
 
-        if (pastedRows.length === 0 || !activeCell) return;
+        if (pastedRows.length === 0 || !selection) return;
 
-        const { row: startRow, col: startCol } = activeCell;
+        const { row: startRow, col: startCol } = selection.focus;
         const newData = data.map(r => [...r]);
         
         let maxCol = numCols;
@@ -257,12 +266,45 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
         document.addEventListener('mouseup', handleMouseUp);
     };
 
+    const getSelectionBounds = (selection: Selection) => {
+        const minRow = Math.min(selection.anchor.row, selection.focus.row);
+        const maxRow = Math.max(selection.anchor.row, selection.focus.row);
+        const minCol = Math.min(selection.anchor.col, selection.focus.col);
+        const maxCol = Math.max(selection.anchor.col, selection.focus.col);
+        return { minRow, maxRow, minCol, maxCol };
+    };
+
+    const handleMouseDown = (e: React.MouseEvent, rowIndex: number, colIndex: number) => {
+        isSelectingRef.current = true;
+        const newCell = { row: rowIndex, col: colIndex };
+
+        if (e.shiftKey) {
+            setSelection(prev => ({...prev, focus: newCell }));
+        } else {
+            setSelection({ anchor: newCell, focus: newCell });
+        }
+        
+        const handleMouseUp = () => {
+            isSelectingRef.current = false;
+            window.removeEventListener('mouseup', handleMouseUp, true);
+        };
+        window.addEventListener('mouseup', handleMouseUp, true);
+    };
+
+    const handleMouseEnter = (rowIndex: number, colIndex: number) => {
+        if(isSelectingRef.current) {
+            setSelection(prev => ({ ...prev, focus: { row: rowIndex, col: colIndex }}));
+        }
+    };
+    
+    const { minRow, maxRow, minCol, maxCol } = getSelectionBounds(selection);
+
     return (
         <div className="p-4 overflow-auto focus:outline-none" onPaste={handlePaste} ref={sheetContainerRef} tabIndex={-1} onKeyDown={handleSheetKeyDown}>
             <table className="table-fixed border-collapse border border-slate-800 w-full bg-slate-900">
                 <thead>
                     <tr>
-                        <th style={{ width: 50, minWidth: 50 }} className="sticky top-0 left-0 z-20 bg-slate-800 p-2 border border-slate-700"></th>
+                        <th style={{ width: 50, minWidth: 50 }} className="sticky top-0 left-0 z-20 bg-slate-800 p-2 border border-slate-700 select-none"></th>
                         {Array.from({ length: numCols }).map((_, colIndex) => {
                              const options = columnOptions[colIndex] || { sort: null, filter: null };
                              const isFiltered = options.filter && options.filter.condition !== 'none';
@@ -297,15 +339,34 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
                     {processedRows.length > 0 ? (
                         processedRows.map(({ rowData, originalIndex: rowIndex }) => (
                             <tr key={rowIndex}>
-                                <td style={{ width: 50, minWidth: 50 }} className="sticky left-0 z-10 bg-slate-800 p-2 border border-slate-700 text-center font-mono text-slate-500">
+                                <td style={{ width: 50, minWidth: 50 }} className="sticky left-0 z-10 bg-slate-800 p-2 border border-slate-700 text-center font-mono text-slate-500 select-none">
                                     {rowIndex + 1}
                                 </td>
                                 {Array.from({ length: numCols }).map((_, colIndex) => {
-                                    const isActive = activeCell.row === rowIndex && activeCell.col === colIndex;
+                                    const isActive = selection.focus.row === rowIndex && selection.focus.col === colIndex;
                                     const isEditing = editingCell?.row === rowIndex && editingCell?.col === colIndex;
-                                    const cellClasses = `border border-slate-700 h-10 hover:bg-slate-800/50 transition-colors duration-150 relative ${isActive && !isEditing ? 'ring-2 ring-violet-500 ring-inset' : ''}`;
+                                    const isSelected = rowIndex >= minRow && rowIndex <= maxRow && colIndex >= minCol && colIndex <= maxCol;
+
+                                    let selectionBorders = '';
+                                    if(isSelected && !isEditing) {
+                                        if (rowIndex === minRow) selectionBorders += ' border-t-violet-400';
+                                        if (rowIndex === maxRow) selectionBorders += ' border-b-violet-400';
+                                        if (colIndex === minCol) selectionBorders += ' border-l-violet-400';
+                                        if (colIndex === maxCol) selectionBorders += ' border-r-violet-400';
+                                    }
+                                    
+                                    const cellClasses = `border border-slate-700 h-10 transition-colors duration-150 relative 
+                                        ${isSelected ? 'bg-violet-900/30' : 'hover:bg-slate-800/50'} 
+                                        ${isActive && !isEditing ? 'ring-2 ring-violet-500 ring-inset z-10' : ''}
+                                        ${selectionBorders}`;
+                                        
                                     return (
-                                    <td key={`${rowIndex}-${colIndex}`} className={cellClasses} onClick={() => setActiveCell({ row: rowIndex, col: colIndex })}>
+                                    <td 
+                                        key={`${rowIndex}-${colIndex}`} 
+                                        className={cellClasses} 
+                                        onMouseDown={(e) => handleMouseDown(e, rowIndex, colIndex)}
+                                        onMouseEnter={() => handleMouseEnter(rowIndex, colIndex)}
+                                    >
                                         <Cell
                                             value={rowData[colIndex] || ''}
                                             displayValue={displayData[rowIndex][colIndex] || ''}

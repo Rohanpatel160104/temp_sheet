@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Toolbar from './components/Toolbar';
@@ -7,7 +8,7 @@ import FilterBar from './components/FilterBar';
 import FormulaBar from './components/FormulaBar';
 import { generateSheetData } from './services/geminiService';
 import { getChatResponse } from './services/geminiChatService';
-import { ChatMessage, ColumnOptions, Filter, SortDirection, CellAddress } from './types';
+import { ChatMessage, ColumnOptions, Filter, SortDirection, Selection } from './types';
 import { useHistory } from './hooks/useHistory';
 
 const DEFAULT_ROWS = 20;
@@ -39,7 +40,10 @@ const App: React.FC = () => {
     const [columnOptions, setColumnOptions] = useState<ColumnOptions[]>(() => Array(numCols).fill({ sort: null, filter: null }));
     const [columnWidths, setColumnWidths] = useState<number[]>(() => Array(numCols).fill(DEFAULT_COL_WIDTH));
     const [activeFilterColumn, setActiveFilterColumn] = useState<number | null>(null);
-    const [activeCell, setActiveCell] = useState<CellAddress>({ row: 0, col: 0 });
+    const [selection, setSelection] = useState<Selection>({ 
+        anchor: { row: 0, col: 0 },
+        focus: { row: 0, col: 0 },
+    });
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -125,7 +129,7 @@ const App: React.FC = () => {
     };
     
     const handleToggleFilterBar = () => {
-        setActiveFilterColumn(prev => prev === activeCell.col ? null : activeCell.col);
+        setActiveFilterColumn(prev => prev === selection.focus.col ? null : selection.focus.col);
     };
     
     const handleCellCommit = (row: number, col: number, value: string) => {
@@ -172,9 +176,9 @@ const App: React.FC = () => {
                     onToggleFilterBar={handleToggleFilterBar}
                 />
                 <FormulaBar
-                    activeCellAddress={`${getColumnName(activeCell.col)}${activeCell.row + 1}`}
-                    value={sheetData[activeCell.row]?.[activeCell.col] || ''}
-                    onChange={(newValue) => handleCellCommit(activeCell.row, activeCell.col, newValue)}
+                    activeCellAddress={`${getColumnName(selection.focus.col)}${selection.focus.row + 1}`}
+                    value={sheetData[selection.focus.row]?.[selection.focus.col] || ''}
+                    onChange={(newValue) => handleCellCommit(selection.focus.row, selection.focus.col, newValue)}
                 />
                 <FilterBar
                     activeColumn={activeFilterColumn !== null ? { index: activeFilterColumn, name: getColumnName(activeFilterColumn) } : null}
@@ -196,8 +200,8 @@ const App: React.FC = () => {
                         columnOptions={columnOptions}
                         activeFilterColumn={activeFilterColumn}
                         setActiveFilterColumn={setActiveFilterColumn}
-                        activeCell={activeCell}
-                        setActiveCell={setActiveCell}
+                        selection={selection}
+                        setSelection={setSelection}
                         columnWidths={columnWidths}
                         onColumnResize={handleColumnResize}
                     />

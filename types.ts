@@ -4,6 +4,11 @@ export interface CellAddress {
   col: number;
 }
 
+export interface Selection {
+    anchor: CellAddress;
+    focus: CellAddress;
+}
+
 export interface ChatMessage {
     sender: 'user' | 'ai';
     text: string;
