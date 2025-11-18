@@ -63,11 +63,11 @@ export const getChatResponse = async (history: ChatMessage[], sheetData: string[
             contents: contents,
             config: {
                 tools: [{ functionDeclarations: [updateCellsFunctionDeclaration] }],
-                systemInstruction: `You are a direct-action spreadsheet assistant. Your only goal is to modify the spreadsheet using the tools provided.
-When a user asks for a change, you MUST call the 'updateCells' function to apply it.
-Do not engage in conversation, do not ask for confirmation, and do not describe the changes you are making.
-Directly output the function call to perform the requested action.
-Analyze the provided CSV data to understand the context of the sheet before making changes. For example, if the user asks to "add a total row", find the last data row and the columns with numbers to sum up.
+                systemInstruction: `You are a spreadsheet AI assistant. Your primary function is to modify the spreadsheet based on user requests using the available tools.
+- When a user asks to modify the sheet, you MUST use the 'updateCells' tool.
+- Do not engage in conversation or ask for confirmation. Perform the action directly.
+- Your response should only be the tool call, without any additional text.
+- Analyze the provided CSV data to understand the context of the sheet before making changes. For example, to "add a total row", you need to find the last row with data and the columns that should be summed.
 
 CURRENT SHEET DATA (first 50 rows):
 ${csvData.split('\n').slice(0, 50).join('\n')}`,
@@ -91,7 +91,13 @@ ${csvData.split('\n').slice(0, 50).join('\n')}`,
             }
         }
         
-        return { type: 'text', content: response.text || '' };
+        const responseText = response.text;
+        if (responseText && responseText.trim()) {
+            return { type: 'text', content: responseText };
+        }
+        
+        // If there's no function call and no text, it's likely an error or a malformed response from the model.
+        return { type: 'text', content: "I'm sorry, I wasn't able to process that request. Could you please try rephrasing it?" };
 
     } catch (error) {
         console.error("Error getting chat response from Gemini:", error);

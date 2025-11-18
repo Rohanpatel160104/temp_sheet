@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { CellAddress, ColumnOptions, Selection } from '../types';
 import Cell from './Cell';
@@ -29,6 +30,15 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
     useEffect(() => {
         sheetContainerRef.current?.focus();
     }, []);
+
+    const handleColumnHeaderClick = (colIndex: number) => {
+        setActiveFilterColumn(activeFilterColumn === colIndex ? null : colIndex);
+        setSelection({
+            anchor: { row: 0, col: colIndex },
+            focus: { row: numRows > 0 ? numRows - 1 : 0, col: colIndex }
+        });
+        sheetContainerRef.current?.focus();
+    };
 
     const handleDataChange = useCallback((row: number, col: number, value: string) => {
         const newData = data.map(r => [...r]);
@@ -199,6 +209,31 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
 
     }, [data, columnOptions]);
 
+    const getSelectionBounds = (selection: Selection) => {
+        const minRow = Math.min(selection.anchor.row, selection.focus.row);
+        const maxRow = Math.max(selection.anchor.row, selection.focus.row);
+        const minCol = Math.min(selection.anchor.col, selection.focus.col);
+        const maxCol = Math.max(selection.anchor.col, selection.focus.col);
+        return { minRow, maxRow, minCol, maxCol };
+    };
+
+    const handleCopy = (e: React.ClipboardEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        const { minRow, maxRow, minCol, maxCol } = getSelectionBounds(selection);
+
+        const selectedRows = [];
+        for (let r = minRow; r <= maxRow; r++) {
+            const rowData = [];
+            for (let c = minCol; c <= maxCol; c++) {
+                rowData.push(data[r]?.[c] || '');
+            }
+            selectedRows.push(rowData.join('\t'));
+        }
+        
+        const copyString = selectedRows.join('\n');
+        e.clipboardData.setData('text/plain', copyString);
+    };
+
     const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
         e.preventDefault();
         const pasteData = e.clipboardData.getData('text/plain');
@@ -255,14 +290,6 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
         document.addEventListener('mouseup', handleMouseUp);
     };
 
-    const getSelectionBounds = (selection: Selection) => {
-        const minRow = Math.min(selection.anchor.row, selection.focus.row);
-        const maxRow = Math.max(selection.anchor.row, selection.focus.row);
-        const minCol = Math.min(selection.anchor.col, selection.focus.col);
-        const maxCol = Math.max(selection.anchor.col, selection.focus.col);
-        return { minRow, maxRow, minCol, maxCol };
-    };
-
     const handleMouseDown = (e: React.MouseEvent, rowIndex: number, colIndex: number) => {
         isSelectingRef.current = true;
         const newCell = { row: rowIndex, col: colIndex };
@@ -289,7 +316,7 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
     const { minRow, maxRow, minCol, maxCol } = getSelectionBounds(selection);
 
     return (
-        <div className="p-4 overflow-auto focus:outline-none" onPaste={handlePaste} ref={sheetContainerRef} tabIndex={-1} onKeyDown={handleSheetKeyDown}>
+        <div className="p-4 overflow-auto focus:outline-none" onPaste={handlePaste} onCopy={handleCopy} ref={sheetContainerRef} tabIndex={-1} onKeyDown={handleSheetKeyDown}>
             <table className="table-fixed border-collapse border border-slate-800 w-full bg-slate-900">
                 <thead>
                     <tr>
@@ -302,7 +329,7 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
                                 <th key={colIndex} style={{ width: `${width}px` }} className="sticky top-0 z-10 bg-slate-800 p-0 border border-slate-700 font-mono text-slate-400 select-none relative">
                                    <div className="flex items-center h-full">
                                         <button 
-                                            onClick={() => setActiveFilterColumn(activeFilterColumn === colIndex ? null : colIndex)}
+                                            onClick={() => handleColumnHeaderClick(colIndex)}
                                             className={`w-full h-full px-2 text-left transition-colors ${activeFilterColumn === colIndex ? 'bg-violet-600/50' : 'hover:bg-slate-700'}`}
                                         >
                                            <div className="flex items-center justify-between">
