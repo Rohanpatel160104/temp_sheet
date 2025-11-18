@@ -1,24 +1,34 @@
-
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Toolbar from './components/Toolbar';
 import Sheet from './components/Sheet';
 import ChatModal from './components/ChatModal';
 import FilterBar from './components/FilterBar';
+import FormulaBar from './components/FormulaBar';
 import { generateSheetData } from './services/geminiService';
 import { getChatResponse } from './services/geminiChatService';
-import { ChatMessage, ColumnOptions, Filter, SortDirection } from './types';
+import { ChatMessage, ColumnOptions, Filter, SortDirection, CellAddress } from './types';
+import { useHistory } from './hooks/useHistory';
 
 const DEFAULT_ROWS = 20;
 const DEFAULT_COLS = 10;
+const DEFAULT_COL_WIDTH = 120;
 
 const createInitialData = (rows: number, cols: number): string[][] => {
     return Array.from({ length: rows }, () => Array(cols).fill(''));
 };
 
 const App: React.FC = () => {
-    const [sheetData, setSheetData] = useState<string[][]>(createInitialData(DEFAULT_ROWS, DEFAULT_COLS));
-    const [isGenerating, setIsGenerating] = useState<boolean>(false);
+    const { 
+        state: sheetData, 
+        setState: setSheetData, 
+        undo, 
+        redo, 
+        canUndo, 
+        canRedo, 
+        reset: resetSheetData 
+    } = useHistory<string[][]>(createInitialData(DEFAULT_ROWS, DEFAULT_COLS));
+    
     const [error, setError] = useState<string | null>(null);
 
     const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
@@ -27,13 +37,46 @@ const App: React.FC = () => {
 
     const numCols = sheetData[0]?.length || DEFAULT_COLS;
     const [columnOptions, setColumnOptions] = useState<ColumnOptions[]>(() => Array(numCols).fill({ sort: null, filter: null }));
+    const [columnWidths, setColumnWidths] = useState<number[]>(() => Array(numCols).fill(DEFAULT_COL_WIDTH));
     const [activeFilterColumn, setActiveFilterColumn] = useState<number | null>(null);
+    const [activeCell, setActiveCell] = useState<CellAddress>({ row: 0, col: 0 });
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const activeEl = document.activeElement;
+            const isInputFocused = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || (activeEl as HTMLElement).isContentEditable);
+
+            if (isInputFocused) {
+                return;
+            }
+
+            const isMac = navigator.platform.toUpperCase().includes('MAC');
+            const isUndo = (isMac ? e.metaKey && !e.shiftKey : e.ctrlKey) && e.key.toLowerCase() === 'z';
+            const isRedo = ((isMac ? e.metaKey && e.shiftKey : e.ctrlKey) && e.key.toLowerCase() === 'z') || (!isMac && e.ctrlKey && e.key.toLowerCase() === 'y');
+
+            if (isUndo) {
+                e.preventDefault();
+                undo();
+            } else if (isRedo) {
+                e.preventDefault();
+                redo();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [undo, redo]);
     
     useEffect(() => {
-        if(columnOptions.length < numCols) {
-            setColumnOptions(prev => [...prev, ...Array(numCols - prev.length).fill({ sort: null, filter: null })]);
+        const currentCols = sheetData[0]?.length || 0;
+        if (columnOptions.length < currentCols) {
+            const diff = currentCols - columnOptions.length;
+            setColumnOptions(prev => [...prev, ...Array(diff).fill({ sort: null, filter: null })]);
+            setColumnWidths(prev => [...prev, ...Array(diff).fill(DEFAULT_COL_WIDTH)]);
         }
-    }, [numCols, columnOptions.length]);
+    }, [sheetData, columnOptions.length]);
 
     const handleAddRow = () => {
         setSheetData(prevData => [...prevData, Array(numCols).fill('')]);
@@ -49,31 +92,6 @@ const App: React.FC = () => {
                 return newRow;
             })
         });
-    };
-
-    const handleGenerateData = async (prompt: string) => {
-        setIsGenerating(true);
-        setError(null);
-        try {
-            const newData = await generateSheetData(prompt);
-            if(newData.length > 0) {
-                const maxCols = Math.max(...newData.map(row => row.length));
-                const sanitizedData = newData.map(row => {
-                    const newRow = [...row];
-                    while(newRow.length < maxCols) {
-                        newRow.push('');
-                    }
-                    return newRow;
-                });
-                setSheetData(sanitizedData);
-                 setColumnOptions(Array(maxCols).fill({ sort: null, filter: null }));
-                 setActiveFilterColumn(null);
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
-        } finally {
-            setIsGenerating(false);
-        }
     };
 
     const handleSendMessage = async (message: string) => {
@@ -105,6 +123,28 @@ const App: React.FC = () => {
         newOptions[colIndex] = { ...newOptions[colIndex], filter };
         setColumnOptions(newOptions);
     };
+    
+    const handleToggleFilterBar = () => {
+        setActiveFilterColumn(prev => prev === activeCell.col ? null : activeCell.col);
+    };
+    
+    const handleCellCommit = (row: number, col: number, value: string) => {
+        setSheetData(prevData => {
+            const newData = prevData.map(r => [...r]);
+            if (newData[row]) {
+                newData[row][col] = value;
+            }
+            return newData;
+        });
+    };
+
+    const handleColumnResize = (colIndex: number, newWidth: number) => {
+        setColumnWidths(prev => {
+            const newWidths = [...prev];
+            newWidths[colIndex] = Math.max(40, newWidth); // Min width
+            return newWidths;
+        });
+    };
 
     const getColumnName = (colIndex: number) => {
         let name = '';
@@ -124,9 +164,17 @@ const App: React.FC = () => {
                 <Toolbar
                     onAddRow={handleAddRow}
                     onAddCol={handleAddCol}
-                    onGenerateData={handleGenerateData}
-                    isGenerating={isGenerating}
                     onOpenChat={() => setIsChatOpen(true)}
+                    onUndo={undo}
+                    onRedo={redo}
+                    canUndo={canUndo}
+                    canRedo={canRedo}
+                    onToggleFilterBar={handleToggleFilterBar}
+                />
+                <FormulaBar
+                    activeCellAddress={`${getColumnName(activeCell.col)}${activeCell.row + 1}`}
+                    value={sheetData[activeCell.row]?.[activeCell.col] || ''}
+                    onChange={(newValue) => handleCellCommit(activeCell.row, activeCell.col, newValue)}
                 />
                 <FilterBar
                     activeColumn={activeFilterColumn !== null ? { index: activeFilterColumn, name: getColumnName(activeFilterColumn) } : null}
@@ -148,6 +196,10 @@ const App: React.FC = () => {
                         columnOptions={columnOptions}
                         activeFilterColumn={activeFilterColumn}
                         setActiveFilterColumn={setActiveFilterColumn}
+                        activeCell={activeCell}
+                        setActiveCell={setActiveCell}
+                        columnWidths={columnWidths}
+                        onColumnResize={handleColumnResize}
                     />
                 </div>
             </main>
@@ -156,6 +208,7 @@ const App: React.FC = () => {
                 onClose={() => setIsChatOpen(false)}
                 messages={chatMessages}
                 onSendMessage={handleSendMessage}
+                // Fix: Pass isChatGenerating state to the isGenerating prop.
                 isGenerating={isChatGenerating}
             />
         </div>

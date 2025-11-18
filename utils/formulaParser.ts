@@ -62,43 +62,66 @@ const evaluate = (
         }
     }
 
-    // Basic arithmetic with cell refs: =A1+B1 or =A1+5
-    const tokens = formula.split(/([+\-*/])/).map(t => t.trim());
-    
+    // Arithmetic parser with operator precedence
     try {
-        let result = 0;
-        let currentOperator = '+';
-
         const resolveToken = (token: string): number => {
-             if (!isNaN(parseFloat(token))) {
-                return parseFloat(token);
+            if (!isNaN(parseFloat(token))) {
+               return parseFloat(token);
+           }
+           const addr = cellRefToAddress(token);
+           if (addr) {
+               const value = evaluateFormula(data[addr.row]?.[addr.col] || '', data, computed, addr, path);
+               const num = parseFloat(String(value));
+               return isNaN(num) ? 0 : num;
+           }
+           throw new Error('#REF!');
+        };
+
+        const tokens = formula.split(/([+\-*/])/).map(t => t.trim()).filter(t => t);
+        if (tokens.length === 0) return 0;
+
+        // Resolve all cell references and numbers into a single array of numbers and operators
+        const values = tokens.map(token => {
+            if (['+', '-', '*', '/'].includes(token)) {
+                return token;
             }
-            const addr = cellRefToAddress(token);
-            if (addr) {
-                const ref = addressToCellRef(addr);
-                const value = evaluateFormula(data[addr.row]?.[addr.col] || '', data, computed, addr, path);
-                const num = parseFloat(String(value));
-                return isNaN(num) ? 0 : num;
+            return resolveToken(token);
+        });
+
+        // Pass 1: Handle multiplication and division
+        const pass1 = [];
+        for (let i = 0; i < values.length; i++) {
+            const token = values[i];
+            if (token === '*' || token === '/') {
+                const left = pass1.pop() as number;
+                const right = values[i + 1] as number;
+                i++; // skip next token since we're using it now
+                if (token === '*') {
+                    pass1.push(left * right);
+                } else {
+                    if (right === 0) throw new Error('#DIV/0!');
+                    pass1.push(left / right);
+                }
+            } else {
+                pass1.push(token);
             }
-            throw new Error('#REF!');
         }
 
-        result = resolveToken(tokens[0]);
-
-        for (let i = 1; i < tokens.length; i += 2) {
-            currentOperator = tokens[i];
-            const value = resolveToken(tokens[i + 1]);
-            switch (currentOperator) {
-                case '+': result += value; break;
-                case '-': result -= value; break;
-                case '*': result *= value; break;
-                case '/': 
-                    if (value === 0) throw new Error('#DIV/0!');
-                    result /= value; 
-                    break;
+        // Pass 2: Handle addition and subtraction
+        if (pass1.length === 0) return 0;
+        let result = pass1[0] as number;
+        for (let i = 1; i < pass1.length; i += 2) {
+            const operator = pass1[i] as string;
+            const right = pass1[i + 1] as number;
+            if (operator === '+') {
+                result += right;
+            } else if (operator === '-') {
+                result -= right;
             }
         }
+        
         return result;
+
     } catch (e) {
         return e instanceof Error ? e.message : '#ERROR!';
     }

@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { CellAddress, ColumnOptions, SortDirection, Filter } from '../types';
 import Cell from './Cell';
@@ -11,16 +10,23 @@ interface SheetProps {
     columnOptions: ColumnOptions[];
     activeFilterColumn: number | null;
     setActiveFilterColumn: (index: number | null) => void;
+    activeCell: CellAddress;
+    setActiveCell: React.Dispatch<React.SetStateAction<CellAddress>>;
+    columnWidths: number[];
+    onColumnResize: (colIndex: number, newWidth: number) => void;
 }
 
-const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilterColumn, setActiveFilterColumn }) => {
+const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilterColumn, setActiveFilterColumn, activeCell, setActiveCell, columnWidths, onColumnResize }) => {
     const [editingCell, setEditingCell] = useState<CellAddress | null>(null);
-    const [activeCell, setActiveCell] = useState<CellAddress>({ row: 0, col: 0 });
     
     const numRows = data.length;
     const numCols = data[0]?.length || 0;
     
     const sheetContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        sheetContainerRef.current?.focus();
+    }, []);
 
     const handleDataChange = useCallback((row: number, col: number, value: string) => {
         const newData = data.map(r => [...r]);
@@ -68,6 +74,57 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
         
         setEditingCell({ row, col });
         setActiveCell({ row, col });
+    };
+
+    const handleSheetKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (editingCell) return;
+        let { row, col } = activeCell;
+        let moved = false;
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                row = Math.min(row + 1, numRows - 1);
+                moved = true;
+                break;
+            case 'ArrowUp':
+                row = Math.max(row - 1, 0);
+                moved = true;
+                break;
+            case 'ArrowLeft':
+                col = Math.max(col - 1, 0);
+                moved = true;
+                break;
+            case 'ArrowRight':
+                col = Math.min(col + 1, numCols - 1);
+                moved = true;
+                break;
+            case 'Enter':
+                 e.preventDefault();
+                setEditingCell(activeCell);
+                return;
+            case 'Tab':
+                e.preventDefault();
+                if (e.shiftKey) {
+                    if (col > 0) col--;
+                    else if (row > 0) {
+                        row--;
+                        col = numCols - 1;
+                    }
+                } else {
+                    if (col < numCols - 1) col++;
+                    else if (row < numRows - 1) {
+                        row++;
+                        col = 0;
+                    }
+                }
+                moved = true;
+                break;
+        }
+
+        if (moved) {
+            e.preventDefault();
+            setActiveCell({ row, col });
+        }
     };
 
     const displayData = useMemo(() => {
@@ -180,31 +237,57 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
         }
         return name;
     };
+    
+    const startResize = (e: React.MouseEvent, colIndex: number) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = columnWidths[colIndex];
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            const newWidth = startWidth + (moveEvent.clientX - startX);
+            onColumnResize(colIndex, newWidth);
+        };
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
 
     return (
-        <div className="p-4 overflow-auto focus:outline-none" onPaste={handlePaste} ref={sheetContainerRef} tabIndex={-1}>
+        <div className="p-4 overflow-auto focus:outline-none" onPaste={handlePaste} ref={sheetContainerRef} tabIndex={-1} onKeyDown={handleSheetKeyDown}>
             <table className="table-fixed border-collapse border border-slate-800 w-full bg-slate-900">
                 <thead>
                     <tr>
-                        <th className="sticky top-0 left-0 z-20 bg-slate-800 p-2 border border-slate-700 min-w-[50px]"></th>
+                        <th style={{ width: 50, minWidth: 50 }} className="sticky top-0 left-0 z-20 bg-slate-800 p-2 border border-slate-700"></th>
                         {Array.from({ length: numCols }).map((_, colIndex) => {
                              const options = columnOptions[colIndex] || { sort: null, filter: null };
                              const isFiltered = options.filter && options.filter.condition !== 'none';
+                             const width = columnWidths[colIndex] || 120;
                             return (
-                                <th key={colIndex} className="sticky top-0 z-10 bg-slate-800 p-0 border border-slate-700 font-mono min-w-[120px] text-slate-400">
-                                   <button 
-                                        onClick={() => setActiveFilterColumn(activeFilterColumn === colIndex ? null : colIndex)}
-                                        className={`w-full h-full px-2 text-left transition-colors ${activeFilterColumn === colIndex ? 'bg-violet-600/50' : 'hover:bg-slate-700'}`}
-                                    >
-                                       <div className="flex items-center justify-between">
-                                            <span>{getColumnName(colIndex)}</span>
-                                            {isFiltered && (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-violet-400" viewBox="0 0 20 20" fill="currentColor">
-                                                  <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 12.414V17a1 1 0 01-1.447.894l-4-2A1 1 0 016 15v-2.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
-                                                </svg>
-                                            )}
-                                       </div>
-                                   </button>
+                                <th key={colIndex} style={{ width: `${width}px` }} className="sticky top-0 z-10 bg-slate-800 p-0 border border-slate-700 font-mono text-slate-400 select-none relative">
+                                   <div className="flex items-center h-full">
+                                        <button 
+                                            onClick={() => setActiveFilterColumn(activeFilterColumn === colIndex ? null : colIndex)}
+                                            className={`w-full h-full px-2 text-left transition-colors ${activeFilterColumn === colIndex ? 'bg-violet-600/50' : 'hover:bg-slate-700'}`}
+                                        >
+                                           <div className="flex items-center justify-between">
+                                                <span>{getColumnName(colIndex)}</span>
+                                                {isFiltered && (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-violet-400" viewBox="0 0 20 20" fill="currentColor">
+                                                      <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 12.414V17a1 1 0 01-1.447.894l-4-2A1 1 0 016 15v-2.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
+                                                    </svg>
+                                                )}
+                                           </div>
+                                       </button>
+                                        <div 
+                                            onMouseDown={(e) => startResize(e, colIndex)}
+                                            className="absolute top-0 right-0 h-full w-2 cursor-col-resize hover:bg-violet-500/50 transition-colors z-10"
+                                        />
+                                   </div>
                                 </th>
                             )
                         })}
@@ -214,13 +297,13 @@ const Sheet: React.FC<SheetProps> = ({ data, setData, columnOptions, activeFilte
                     {processedRows.length > 0 ? (
                         processedRows.map(({ rowData, originalIndex: rowIndex }) => (
                             <tr key={rowIndex}>
-                                <td className="sticky left-0 z-10 bg-slate-800 p-2 border border-slate-700 text-center font-mono text-slate-500">
+                                <td style={{ width: 50, minWidth: 50 }} className="sticky left-0 z-10 bg-slate-800 p-2 border border-slate-700 text-center font-mono text-slate-500">
                                     {rowIndex + 1}
                                 </td>
                                 {Array.from({ length: numCols }).map((_, colIndex) => {
                                     const isActive = activeCell.row === rowIndex && activeCell.col === colIndex;
                                     const isEditing = editingCell?.row === rowIndex && editingCell?.col === colIndex;
-                                    const cellClasses = `border border-slate-700 h-10 min-w-[120px] hover:bg-slate-800/50 transition-colors duration-150 relative ${isActive && !isEditing ? 'ring-2 ring-violet-500 ring-inset' : ''}`;
+                                    const cellClasses = `border border-slate-700 h-10 hover:bg-slate-800/50 transition-colors duration-150 relative ${isActive && !isEditing ? 'ring-2 ring-violet-500 ring-inset' : ''}`;
                                     return (
                                     <td key={`${rowIndex}-${colIndex}`} className={cellClasses} onClick={() => setActiveCell({ row: rowIndex, col: colIndex })}>
                                         <Cell

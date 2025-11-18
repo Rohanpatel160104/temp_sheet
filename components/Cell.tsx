@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 
 interface CellProps {
@@ -12,17 +11,31 @@ interface CellProps {
 }
 
 const Cell: React.FC<CellProps> = ({ value, displayValue, isEditing, onDoubleClick, onChange, onBlur, onNavigate }) => {
+    const [localValue, setLocalValue] = useState(value);
     const inputRef = useRef<HTMLInputElement>(null);
+    const escaped = useRef(false);
 
     useEffect(() => {
         if (isEditing) {
+            escaped.current = false;
+            setLocalValue(value);
             inputRef.current?.focus();
             inputRef.current?.select();
         }
-    }, [isEditing]);
+    }, [isEditing, value]);
+
+    const handleBlur = () => {
+        if (!escaped.current && localValue !== value) {
+            onChange(localValue);
+        }
+        onBlur();
+    };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab' || e.key.startsWith('Arrow')) {
+        if (e.key === 'Escape') {
+            escaped.current = true;
+            onNavigate(e);
+        } else if (e.key === 'Enter' || e.key === 'Tab' || e.key.startsWith('Arrow')) {
             onNavigate(e);
         }
     };
@@ -32,9 +45,9 @@ const Cell: React.FC<CellProps> = ({ value, displayValue, isEditing, onDoubleCli
             <input
                 ref={inputRef}
                 type="text"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onBlur={onBlur}
+                value={localValue}
+                onChange={(e) => setLocalValue(e.target.value)}
+                onBlur={handleBlur}
                 onKeyDown={handleKeyDown}
                 className="w-full h-full p-2 box-border bg-slate-700 text-slate-100 outline-none ring-2 ring-violet-500"
             />
