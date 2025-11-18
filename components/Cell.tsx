@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 interface CellProps {
     value: string;
+    displayValue: string;
     isEditing: boolean;
     onDoubleClick: () => void;
     onChange: (newValue: string) => void;
@@ -10,7 +11,7 @@ interface CellProps {
     onNavigate: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
-const Cell: React.FC<CellProps> = ({ value, isEditing, onDoubleClick, onChange, onBlur, onNavigate }) => {
+const Cell: React.FC<CellProps> = ({ value, displayValue, isEditing, onDoubleClick, onChange, onBlur, onNavigate }) => {
     const inputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -35,17 +36,19 @@ const Cell: React.FC<CellProps> = ({ value, isEditing, onDoubleClick, onChange, 
                 onChange={(e) => onChange(e.target.value)}
                 onBlur={onBlur}
                 onKeyDown={handleKeyDown}
-                className="w-full h-full p-2 box-border bg-indigo-100 dark:bg-slate-700 text-slate-900 dark:text-white outline-none ring-2 ring-indigo-500"
+                className="w-full h-full p-2 box-border bg-slate-700 text-slate-100 outline-none ring-2 ring-violet-500"
             />
         );
     }
+    
+    const isFormulaError = displayValue.startsWith('#');
 
     return (
         <div 
             onDoubleClick={onDoubleClick}
-            className="w-full h-full p-2 truncate cursor-cell"
+            className={`w-full h-full p-2 truncate cursor-cell ${isFormulaError ? 'text-red-400 font-mono text-xs' : ''}`}
         >
-            {value}
+            {displayValue}
         </div>
     );
 };
