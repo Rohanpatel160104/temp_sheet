@@ -1,0 +1,5 @@
+{
+  "name": "Temp Sheet",
+  "description": "A temporary spreadsheet application to quickly create and edit sheets. It leverages AI to generate sample data from a text prompt.",
+  "requestFramePermissions": []
+}
